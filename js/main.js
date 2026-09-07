@@ -1,4 +1,4 @@
-// Pre-entrega nº 5 - Instanciando Objetos
+// Pre-entrega nº 6 - Funciones de Orden Superior
 
 const profesor = "Agustin";
 const contraseña = "1234";
@@ -190,6 +190,54 @@ function calcularPromedioDeMateria(lista) {
   }
 }
 
+function filtrarPorCategoria(lista) {
+  const categoria = prompt("Ingrese la categoria a filtrar (ciencias, humanidades, idiomas):");
+  if (categoria === null || categoria === "") {
+    alert("Filtro cancelado.");
+    return;
+  }
+  const filtradas = lista.filter(function (materia) {
+    return materia.categoria.toLowerCase() === categoria.toLowerCase();
+  });
+  if (filtradas.length === 0) {
+    alert("No hay materias en la categoria: " + categoria);
+    console.log("filter: sin resultados para", categoria);
+    return;
+  }
+  let reporte = "Materias de \"" + categoria + "\":\n";
+  for (const materia of filtradas) {
+    reporte += "- " + materia.informarEstado() + "\n";
+  }
+  alert(reporte);
+  console.log("filter:", filtradas.map(function (m) { return m.informarEstado(); }));
+}
+
+function listarPromedios(lista) {
+  const reporte = lista.map(function (materia) {
+    const promedio = materia.calcularPromedio();
+    return materia.nombre + ": " + (promedio !== null ? promedio : "sin notas");
+  });
+  alert("Promedios por materia:\n" + reporte.join("\n"));
+  console.log("map:", reporte);
+}
+
+function promedioGeneral(lista) {
+  const conNotas = lista.filter(function (materia) {
+    return materia.calcularPromedio() !== null;
+  });
+  if (conNotas.length === 0) {
+    alert("No hay materias con notas cargadas.");
+    console.log("reduce: no hay notas para calcular");
+    return;
+  }
+  const suma = conNotas.reduce(function (acc, materia) {
+    return acc + materia.calcularPromedio();
+  }, 0);
+  const general = suma / conNotas.length;
+  alert("Promedio general del curso: " + general);
+  console.log("reduce - promedio general:", general, "| materias con notas:", conNotas.length);
+}
+
 function mostrarMenu() {
   return prompt(
     "Simulador de materias\n" +
@@ -199,8 +247,11 @@ function mostrarMenu() {
     "4 - Eliminar ultima materia (pop)\n" +
     "5 - Buscar materia (findIndex)\n" +
     "6 - Actualizar materia\n" +
-    "7 - Calcular promedio de una materia\n" +
-    "8 - Salir"
+    "7 - Calcular promedio de una materia (find)\n" +
+    "8 - Filtrar por categoria (filter)\n" +
+    "9 - Listar promedios (map)\n" +
+    "10 - Promedio general del curso (reduce)\n" +
+    "11 - Salir"
   );
 }
 
@@ -208,7 +259,7 @@ const acceso = iniciarSesion(profesor, contraseña);
 
 if (acceso) {
   let opcion = "";
-  while (opcion !== "8") {
+  while (opcion !== "11") {
     opcion = mostrarMenu();
     switch (opcion) {
       case "1": listarMaterias(materias); break;
@@ -218,7 +269,10 @@ if (acceso) {
       case "5": buscarMateria(materias); break;
       case "6": actualizarMateria(materias); break;
       case "7": calcularPromedioDeMateria(materias); break;
-      case "8":
+      case "8": filtrarPorCategoria(materias); break;
+      case "9": listarPromedios(materias); break;
+      case "10": promedioGeneral(materias); break;
+      case "11":
         alert("Fin del simulador.");
         console.log("Simulador finalizado. Materias:", materias.map(function (m) { return m.informarEstado(); }));
         break;
