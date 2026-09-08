@@ -3,10 +3,74 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simulador de promedios — Pre-Entrega 6</title>
+  <title>Simulador de Materias — Interfaz DOM</title>
+  <link rel="stylesheet" href="css/style.css">
   <script defer src="js/main.js"></script>
 </head>
 <body>
-  <h1>Simulador de Promedios</h1>
+  <div class="app">
+    <header class="app-header">
+      <h1>Simulador de Materias</h1>
+      <p class="subtitulo">Gestión de materias y promedios con interfaz dinámica</p>
+    </header>
+
+    <section id="seccion-login" class="panel">
+      <h2>Iniciar sesión</h2>
+      <form id="form-login" class="formulario">
+        <label>
+          Profesor
+          <input type="text" id="input-usuario" placeholder="Nombre del profesor" autocomplete="username" required>
+        </label>
+        <label>
+          Contraseña
+          <input type="password" id="input-contrasena" placeholder="Contraseña" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn-primario">Ingresar</button>
+      </form>
+      <p id="intentos-restantes" class="meta">Intentos restantes: 3</p>
+    </section>
+
+    <section id="seccion-app" class="oculto">
+      <div class="barra-usuario">
+        <p>Sesión: <strong id="nombre-sesion"></strong></p>
+        <button type="button" id="btn-cerrar-sesion" class="btn btn-secundario">Cerrar sesión</button>
+      </div>
+
+      <div class="panel">
+        <h2>Agregar materia</h2>
+        <form id="form-materia" class="formulario formulario-fila">
+          <label>
+            Nombre
+            <input type="text" id="input-nombre" placeholder="Ej: Física" required>
+          </label>
+          <label>
+            Categoría
+            <input type="text" id="input-categoria" placeholder="Ej: ciencias" required>
+          </label>
+          <button type="submit" class="btn btn-primario">+ Agregar</button>
+        </form>
+      </div>
+
+      <div class="panel panel-herramientas">
+        <label class="busqueda">
+          Buscar materia
+          <input type="search" id="input-busqueda" placeholder="Escribí para filtrar (evento de teclado)..." autocomplete="off">
+        </label>
+        <div class="acciones-rapidas">
+          <button type="button" id="btn-promedio-general" class="btn btn-secundario">Promedio general</button>
+        </div>
+      </div>
+
+      <p id="mensaje-feedback" class="feedback" role="status" aria-live="polite"></p>
+
+      <div class="panel">
+        <div class="lista-cabecera">
+          <h2>Listado de materias</h2>
+          <span id="contador-materias" class="meta">0 materias</span>
+        </div>
+        <div id="contenedor-items"></div>
+      </div>
+    </section>
+  </div>
 </body>
 </html>
