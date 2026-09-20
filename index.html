@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simulador de Materias — Interfaz DOM</title>
+  <title>Simulador de Materias — DOM + Storage</title>
   <link rel="stylesheet" href="css/style.css">
   <script defer src="js/main.js"></script>
 </head>
@@ -11,7 +11,7 @@
   <div class="app">
     <header class="app-header">
       <h1>Simulador de Materias</h1>
-      <p class="subtitulo">Gestión de materias y promedios con interfaz dinámica</p>
+      <p class="subtitulo">Gestión de materias con DOM, eventos y persistencia en localStorage</p>
     </header>
 
     <section id="seccion-login" class="panel">
@@ -58,6 +58,7 @@
         </label>
         <div class="acciones-rapidas">
           <button type="button" id="btn-promedio-general" class="btn btn-secundario">Promedio general</button>
+          <button type="button" id="btn-vaciar-materias" class="btn btn-peligro">Vaciar listado</button>
         </div>
       </div>
 

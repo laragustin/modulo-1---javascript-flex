@@ -1,7 +1,9 @@
-// Pre-entrega — Interfaz dinámica con DOM y eventos
+// Pre-entrega 8 — Sincronización de estado entre DOM y Storage
 
 const profesor = "Agustin";
 const contraseña = "1234";
+const STORAGE_KEY = "materiasSimulador";
+const STORAGE_ID_KEY = "siguienteIdMaterias";
 
 class Materia {
   constructor(id, nombre, categoria, profesorAsignado) {
@@ -20,8 +22,9 @@ class Materia {
   }
 
   calcularPromedio() {
-    if (this.nota1 === null || this.nota2 === null) return null;
-    return (this.nota1 + this.nota2) / 2;
+    return this.nota1 === null || this.nota2 === null
+      ? null
+      : (this.nota1 + this.nota2) / 2;
   }
 
   informarEstado() {
@@ -31,18 +34,70 @@ class Materia {
   }
 }
 
-const materiaFisica = new Materia(1, "fisica", "ciencias", profesor);
-const materiaMatematica = new Materia(2, "matematica", "ciencias", profesor);
-const materiaQuimica = new Materia(3, "quimica", "ciencias", profesor);
-const materiaHistoria = new Materia(4, "historia", "humanidades", profesor);
-const materiaIngles = new Materia(5, "ingles", "idiomas", profesor);
+const crearMateriasIniciales = () => {
+  const fisica = new Materia(1, "fisica", "ciencias", profesor);
+  const matematica = new Materia(2, "matematica", "ciencias", profesor);
+  const quimica = new Materia(3, "quimica", "ciencias", profesor);
+  const historia = new Materia(4, "historia", "humanidades", profesor);
+  const ingles = new Materia(5, "ingles", "idiomas", profesor);
 
-materiaFisica.registrarNotas(8, 9);
-materiaMatematica.registrarNotas(7, 6);
-materiaQuimica.registrarNotas(10, 9);
+  fisica.registrarNotas(8, 9);
+  matematica.registrarNotas(7, 6);
+  quimica.registrarNotas(10, 9);
 
-let materias = [materiaFisica, materiaMatematica, materiaQuimica, materiaHistoria, materiaIngles];
-let siguienteId = 6;
+  return [fisica, matematica, quimica, historia, ingles];
+};
+
+// Destructuring: reconstruye una instancia Materia desde un objeto del storage
+const materiaDesdeObjeto = ({
+  id,
+  nombre,
+  categoria,
+  profesorAsignado,
+  nota1 = null,
+  nota2 = null,
+  lograda = false,
+}) => {
+  const materia = new Materia(id, nombre, categoria, profesorAsignado ?? profesor);
+  if (nota1 !== null && nota2 !== null) materia.registrarNotas(nota1, nota2);
+  materia.lograda = lograda ?? false;
+  return materia;
+};
+
+const guardarMateriasEnStorage = () => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(materias));
+  localStorage.setItem(STORAGE_ID_KEY, String(siguienteId));
+};
+
+const cargarEstadoDesdeStorage = () => {
+  const raw = localStorage.getItem(STORAGE_KEY);
+
+  // Si nunca se guardó nada, arrancamos con el listado por defecto
+  if (raw === null) {
+    return { lista: crearMateriasIniciales(), proximoId: 6 };
+  }
+
+  const guardadas = JSON.parse(raw) ?? [];
+  const idGuardado = Number(localStorage.getItem(STORAGE_ID_KEY));
+  const maxId = guardadas.reduce((mayor, { id }) => (id > mayor ? id : mayor), 0);
+  const proximoId =
+    !Number.isNaN(idGuardado) && idGuardado > maxId
+      ? idGuardado
+      : maxId > 0
+        ? maxId + 1
+        : 1;
+
+  return { lista: guardadas.map(materiaDesdeObjeto), proximoId };
+};
+
+const vaciarStorageMaterias = () => {
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(STORAGE_ID_KEY);
+};
+
+const { lista: materiasCargadas, proximoId } = cargarEstadoDesdeStorage();
+let materias = materiasCargadas;
+let siguienteId = proximoId;
 let intentosRestantes = 3;
 let idResaltado = null;
 let temporizadorFeedback = null;
@@ -60,6 +115,7 @@ const inputNombre = document.getElementById("input-nombre");
 const inputCategoria = document.getElementById("input-categoria");
 const inputBusqueda = document.getElementById("input-busqueda");
 const btnPromedioGeneral = document.getElementById("btn-promedio-general");
+const btnVaciarMaterias = document.getElementById("btn-vaciar-materias");
 const contenedorItems = document.getElementById("contenedor-items");
 const contadorMaterias = document.getElementById("contador-materias");
 const mensajeFeedback = document.getElementById("mensaje-feedback");
@@ -89,13 +145,13 @@ const obtenerFiltro = () => inputBusqueda.value.trim().toLowerCase();
 
 const materiasFiltradas = () => {
   const filtro = obtenerFiltro();
-  if (!filtro) return materias;
-
-  return materias.filter((materia) => {
-    const nombre = materia.nombre.toLowerCase();
-    const categoria = materia.categoria.toLowerCase();
-    return nombre.includes(filtro) || categoria.includes(filtro);
-  });
+  return !filtro
+    ? materias
+    : materias.filter(({ nombre, categoria }) => {
+        const nombreLower = nombre.toLowerCase();
+        const categoriaLower = categoria.toLowerCase();
+        return nombreLower.includes(filtro) || categoriaLower.includes(filtro);
+      });
 };
 
 const promedioGeneralCurso = (lista) => {
@@ -110,20 +166,23 @@ const renderizarMaterias = () => {
   contadorMaterias.textContent = lista.length + (lista.length === 1 ? " materia" : " materias");
 
   if (lista.length === 0) {
-    contenedorItems.innerHTML = '<p class="vacio">No hay materias para mostrar. Probá otra búsqueda o agregá una nueva.</p>';
+    contenedorItems.innerHTML =
+      '<p class="vacio">No hay materias para mostrar. Probá otra búsqueda o agregá una nueva.</p>';
     return;
   }
 
   contenedorItems.innerHTML = lista
     .map((materia) => {
+      const { id, nombre, categoria, profesorAsignado, nota1, nota2, lograda } = materia;
       const promedio = materia.calcularPromedio();
       const textoPromedio = promedio !== null ? promedio.toFixed(2) : "sin notas";
       const aprobada = promedio !== null && promedio >= 7;
-      const clases = ["item-materia"];
-      if (materia.id === idResaltado) clases.push("recien-agregado");
-      if (aprobada || materia.lograda) clases.push("aprobada");
 
-      const estadoTexto = materia.lograda
+      const clases = ["item-materia"];
+      if (id === idResaltado) clases.push("recien-agregado");
+      if (aprobada || lograda) clases.push("aprobada");
+
+      const estadoTexto = lograda
         ? "Lograda"
         : aprobada
           ? "Aprobada"
@@ -131,15 +190,15 @@ const renderizarMaterias = () => {
             ? "Desaprobada"
             : "Pendiente";
 
-      const estadoClase = materia.lograda || aprobada ? "ok" : promedio === null ? "pendiente" : "";
+      const estadoClase = lograda || aprobada ? "ok" : promedio === null ? "pendiente" : "";
 
       return `
-        <article class="${clases.join(" ")}" data-id="${materia.id}">
+        <article class="${clases.join(" ")}" data-id="${id}">
           <div class="item-cabecera">
             <div>
-              <h3>${materia.nombre}</h3>
-              <p>Categoría: ${materia.categoria} · Profesor: ${materia.profesorAsignado}</p>
-              <p>Nota 1: ${materia.nota1 ?? "-"} · Nota 2: ${materia.nota2 ?? "-"} · Promedio: ${textoPromedio}</p>
+              <h3>${nombre}</h3>
+              <p>Categoría: ${categoria} · Profesor: ${profesorAsignado}</p>
+              <p>Nota 1: ${nota1 ?? "-"} · Nota 2: ${nota2 ?? "-"} · Promedio: ${textoPromedio}</p>
               <span class="estado-chip ${estadoClase}">${estadoTexto}</span>
             </div>
             <div class="item-acciones">
@@ -150,11 +209,11 @@ const renderizarMaterias = () => {
           <form class="item-notas" data-accion="notas">
             <label>
               Nota 1
-              <input type="number" name="nota1" min="1" max="10" step="any" placeholder="1 a 10" value="${materia.nota1 ?? ""}">
+              <input type="number" name="nota1" min="1" max="10" step="any" placeholder="1 a 10" value="${nota1 ?? ""}">
             </label>
             <label>
               Nota 2
-              <input type="number" name="nota2" min="1" max="10" step="any" placeholder="1 a 10" value="${materia.nota2 ?? ""}">
+              <input type="number" name="nota2" min="1" max="10" step="any" placeholder="1 a 10" value="${nota2 ?? ""}">
             </label>
             <button type="submit" class="btn btn-secundario btn-chico">Guardar notas</button>
           </form>
@@ -185,6 +244,7 @@ const agregarMateriaDesdeFormulario = (event) => {
   materias.push(nueva);
   idResaltado = nueva.id;
 
+  guardarMateriasEnStorage();
   formMateria.reset();
   inputNombre.focus();
   renderizarMaterias();
@@ -200,13 +260,15 @@ const eliminarMateria = (id) => {
   const materia = materias.find((item) => item.id === id);
   if (!materia) return;
 
+  const { nombre } = materia;
   const tarjeta = contenedorItems.querySelector('[data-id="' + id + '"]');
-  if (tarjeta) tarjeta.classList.add("eliminando");
+  tarjeta?.classList.add("eliminando");
 
   setTimeout(() => {
     materias = materias.filter((item) => item.id !== id);
+    guardarMateriasEnStorage();
     renderizarMaterias();
-    mostrarFeedback('Se eliminó "' + materia.nombre + '".', "warn");
+    mostrarFeedback('Se eliminó "' + nombre + '".', "warn");
   }, 220);
 };
 
@@ -214,9 +276,11 @@ const marcarLograda = (id) => {
   const materia = materias.find((item) => item.id === id);
   if (!materia) return;
 
+  const { nombre } = materia;
   materia.lograda = true;
+  guardarMateriasEnStorage();
   renderizarMaterias();
-  mostrarFeedback('"' + materia.nombre + '" marcada como lograda.', "ok");
+  mostrarFeedback('"' + nombre + '" marcada como lograda.', "ok");
 };
 
 const guardarNotas = (id, nota1, nota2) => {
@@ -228,12 +292,31 @@ const guardarNotas = (id, nota1, nota2) => {
     return;
   }
 
+  const { nombre } = materia;
   materia.registrarNotas(nota1, nota2);
+  guardarMateriasEnStorage();
   renderizarMaterias();
   mostrarFeedback(
-    "Notas guardadas en " + materia.nombre + ". Promedio: " + materia.calcularPromedio().toFixed(2),
+    "Notas guardadas en " + nombre + ". Promedio: " + materia.calcularPromedio().toFixed(2),
     "ok"
   );
+};
+
+const vaciarMaterias = () => {
+  if (materias.length === 0) {
+    mostrarFeedback("No hay materias para vaciar.", "warn");
+    return;
+  }
+
+  const confirmar = window.confirm("¿Vaciar todas las materias del listado y del almacenamiento?");
+  if (!confirmar) return;
+
+  materias = [];
+  siguienteId = 1;
+  vaciarStorageMaterias();
+  guardarMateriasEnStorage();
+  renderizarMaterias();
+  mostrarFeedback("Se vació el listado y el localStorage.", "warn");
 };
 
 const iniciarSesion = (event) => {
@@ -264,12 +347,13 @@ const iniciarSesion = (event) => {
   intentosRestantes -= 1;
   actualizarIntentos();
 
-  if (intentosRestantes === 0) {
-    formLogin.querySelector("button").disabled = true;
-    mostrarFeedback("Credenciales incorrectas. Sin intentos restantes.", "error");
-  } else {
-    mostrarFeedback("Error de credenciales. Quedan " + intentosRestantes + " intentos.", "error");
-  }
+  const mensajeError =
+    intentosRestantes === 0
+      ? "Credenciales incorrectas. Sin intentos restantes."
+      : "Error de credenciales. Quedan " + intentosRestantes + " intentos.";
+
+  if (intentosRestantes === 0) formLogin.querySelector("button").disabled = true;
+  mostrarFeedback(mensajeError, "error");
 };
 
 const cerrarSesion = () => {
@@ -283,22 +367,19 @@ const cerrarSesion = () => {
 formLogin.addEventListener("submit", iniciarSesion);
 btnCerrarSesion.addEventListener("click", cerrarSesion);
 formMateria.addEventListener("submit", agregarMateriaDesdeFormulario);
+btnVaciarMaterias?.addEventListener("click", vaciarMaterias);
 
 inputBusqueda.addEventListener("keyup", () => {
   renderizarMaterias();
   const filtro = obtenerFiltro();
-  if (filtro) {
-    mostrarFeedback('Filtro activo: "' + filtro + '".', "info");
-  }
+  if (filtro) mostrarFeedback('Filtro activo: "' + filtro + '".', "info");
 });
 
 btnPromedioGeneral.addEventListener("click", () => {
   const general = promedioGeneralCurso(materias);
-  if (general === null) {
-    mostrarFeedback("No hay materias con notas cargadas.", "warn");
-    return;
-  }
-  mostrarFeedback("Promedio general del curso: " + general.toFixed(2), "ok");
+  general === null
+    ? mostrarFeedback("No hay materias con notas cargadas.", "warn")
+    : mostrarFeedback("Promedio general del curso: " + general.toFixed(2), "ok");
 });
 
 contenedorItems.addEventListener("click", (event) => {
@@ -306,8 +387,8 @@ contenedorItems.addEventListener("click", (event) => {
   if (!boton) return;
 
   const tarjeta = boton.closest(".item-materia");
-  const id = Number(tarjeta.dataset.id);
-  const accion = boton.dataset.accion;
+  const id = Number(tarjeta?.dataset?.id);
+  const { accion } = boton.dataset;
 
   if (accion === "eliminar") eliminarMateria(id);
   if (accion === "lograr") marcarLograda(id);
@@ -319,9 +400,11 @@ contenedorItems.addEventListener("submit", (event) => {
 
   event.preventDefault();
   const tarjeta = form.closest(".item-materia");
-  const id = Number(tarjeta.dataset.id);
+  const id = Number(tarjeta?.dataset?.id);
   const datos = new FormData(form);
   guardarNotas(id, datos.get("nota1"), datos.get("nota2"));
 });
 
+// Primera persistencia si el storage estaba vacío
+guardarMateriasEnStorage();
 actualizarIntentos();
