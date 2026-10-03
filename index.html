@@ -3,19 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simulador de Materias — Asincronismo</title>
+  <title>Simulador de Materias — APIs, Peticiones y Librerías</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
   <link rel="stylesheet" href="css/style.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script defer src="js/main.js"></script>
 </head>
 <body>
   <div class="app">
     <header class="app-header">
       <h1>Simulador de Materias</h1>
-      <p class="subtitulo">Gestión de materias con DOM, eventos y persistencia en localStorage</p>
+      <p class="subtitulo">Datos obtenidos con fetch desde un JSON local, persistencia en localStorage y notificaciones con Toastify y SweetAlert2</p>
     </header>
 
     <section id="seccion-login" class="panel">
       <h2>Iniciar sesión</h2>
+      <p id="estado-carga" class="estado-carga" role="status" aria-live="polite"></p>
       <form id="form-login" class="formulario">
         <label>
           Profesor
@@ -63,11 +67,10 @@
         </label>
         <div class="acciones-rapidas">
           <button type="button" id="btn-promedio-general" class="btn btn-secundario">Promedio general</button>
+          <button type="button" id="btn-restaurar-servidor" class="btn btn-secundario">Restaurar del servidor</button>
           <button type="button" id="btn-vaciar-materias" class="btn btn-peligro">Vaciar listado</button>
         </div>
       </div>
-
-      <p id="mensaje-feedback" class="feedback" role="status" aria-live="polite"></p>
 
       <div class="panel">
         <div class="lista-cabecera">

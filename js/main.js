@@ -1,11 +1,22 @@
-// Pre-entrega 9 — Asincronismo (setTimeout) y manejo de errores (try-catch-finally)
+// Pre-entrega 10 — fetch + async/await a un JSON local y librerías (Toastify + SweetAlert2)
 
 const profesor = "Agustin";
 const contraseña = "1234";
+const DATA_URL = "./data/materias.json";
 const STORAGE_KEY = "materiasSimulador";
 const STORAGE_ID_KEY = "siguienteIdMaterias";
 const DEMORA_RECORDATORIO_MS = 3000;
+const DEMORA_RED_SIMULADA_MS = 1200;
 const DIAS_HASTA_CIERRE_ACTAS = 10;
+const COLOR_PRIMARIO = "#0f6b7a";
+const COLOR_PELIGRO = "#a33b3b";
+
+const COLORES_FEEDBACK = {
+  ok: "linear-gradient(135deg, #1f7a4d, #2e9e66)",
+  error: "linear-gradient(135deg, #a33b3b, #c55252)",
+  warn: "linear-gradient(135deg, #8a5a12, #b7791f)",
+  info: "linear-gradient(135deg, #0a4f5a, #0f6b7a)",
+};
 
 class Materia {
   constructor(id, nombre, categoria, profesorAsignado) {
@@ -36,21 +47,7 @@ class Materia {
   }
 }
 
-const crearMateriasIniciales = () => {
-  const fisica = new Materia(1, "fisica", "ciencias", profesor);
-  const matematica = new Materia(2, "matematica", "ciencias", profesor);
-  const quimica = new Materia(3, "quimica", "ciencias", profesor);
-  const historia = new Materia(4, "historia", "humanidades", profesor);
-  const ingles = new Materia(5, "ingles", "idiomas", profesor);
-
-  fisica.registrarNotas(8, 9);
-  matematica.registrarNotas(7, 6);
-  quimica.registrarNotas(10, 9);
-
-  return [fisica, matematica, quimica, historia, ingles];
-};
-
-// Destructuring: reconstruye una instancia Materia desde un objeto del storage
+// Destructuring: reconstruye una instancia Materia desde un objeto del JSON o del storage
 const materiaDesdeObjeto = ({
   id,
   nombre,
@@ -71,15 +68,17 @@ const guardarMateriasEnStorage = () => {
   localStorage.setItem(STORAGE_ID_KEY, String(siguienteId));
 };
 
+const calcularProximoId = (lista, idGuardado = 0) => {
+  const maxId = lista.reduce((mayor, { id }) => (id > mayor ? id : mayor), 0);
+  return !Number.isNaN(idGuardado) && idGuardado > maxId ? idGuardado : maxId + 1;
+};
+
 let storageCorrupto = false;
 
+// Devuelve null si no hay nada guardado (o si estaba dañado) para que se usen los datos del servidor
 const cargarEstadoDesdeStorage = () => {
   const raw = localStorage.getItem(STORAGE_KEY);
-
-  // Si nunca se guardó nada, arrancamos con el listado por defecto
-  if (raw === null) {
-    return { lista: crearMateriasIniciales(), proximoId: 6 };
-  }
+  if (raw === null) return null;
 
   try {
     const guardadas = JSON.parse(raw) ?? [];
@@ -87,20 +86,13 @@ const cargarEstadoDesdeStorage = () => {
       throw new TypeError("El contenido guardado no es un listado de materias.");
     }
 
+    const lista = guardadas.map(materiaDesdeObjeto);
     const idGuardado = Number(localStorage.getItem(STORAGE_ID_KEY));
-    const maxId = guardadas.reduce((mayor, { id }) => (id > mayor ? id : mayor), 0);
-    const proximoId =
-      !Number.isNaN(idGuardado) && idGuardado > maxId
-        ? idGuardado
-        : maxId > 0
-          ? maxId + 1
-          : 1;
-
-    return { lista: guardadas.map(materiaDesdeObjeto), proximoId };
+    return { lista, proximoId: calcularProximoId(lista, idGuardado) };
   } catch (error) {
     console.error("No se pudo leer el localStorage:", error);
     storageCorrupto = true;
-    return { lista: crearMateriasIniciales(), proximoId: 6 };
+    return null;
   } finally {
     console.info("Lectura del localStorage finalizada.");
   }
@@ -111,17 +103,47 @@ const vaciarStorageMaterias = () => {
   localStorage.removeItem(STORAGE_ID_KEY);
 };
 
-const { lista: materiasCargadas, proximoId } = cargarEstadoDesdeStorage();
-let materias = materiasCargadas;
-let siguienteId = proximoId;
+// Simula la latencia de una red real para que el estado "cargando" sea visible
+const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const obtenerMateriasDesdeJSON = async () => {
+  let respuesta;
+  try {
+    respuesta = await fetch(DATA_URL);
+  } catch {
+    throw new Error("No se pudo conectar con el servidor de datos. Revisá tu conexión.");
+  }
+
+  if (!respuesta.ok) {
+    throw new Error("El servidor respondió con un error (" + respuesta.status + " " + respuesta.statusText + ").");
+  }
+
+  let datos;
+  try {
+    datos = await respuesta.json();
+  } catch {
+    throw new SyntaxError("El archivo de datos tiene un formato inválido.");
+  }
+
+  if (!Array.isArray(datos)) {
+    throw new TypeError("El archivo de datos no contiene un listado de materias.");
+  }
+
+  return datos.map(materiaDesdeObjeto);
+};
+
+let materias = [];
+let siguienteId = 1;
 let intentosRestantes = 3;
 let idResaltado = null;
-let temporizadorFeedback = null;
 let temporizadorRecordatorio = null;
+let cargandoDatos = false;
 
 const seccionLogin = document.getElementById("seccion-login");
 const seccionApp = document.getElementById("seccion-app");
 const formLogin = document.getElementById("form-login");
+const botonIngresar = formLogin.querySelector("button[type='submit']");
+const estadoCarga = document.getElementById("estado-carga");
 const inputUsuario = document.getElementById("input-usuario");
 const inputContrasena = document.getElementById("input-contrasena");
 const intentosRestantesTexto = document.getElementById("intentos-restantes");
@@ -133,9 +155,9 @@ const inputCategoria = document.getElementById("input-categoria");
 const inputBusqueda = document.getElementById("input-busqueda");
 const btnPromedioGeneral = document.getElementById("btn-promedio-general");
 const btnVaciarMaterias = document.getElementById("btn-vaciar-materias");
+const btnRestaurarServidor = document.getElementById("btn-restaurar-servidor");
 const contenedorItems = document.getElementById("contenedor-items");
 const contadorMaterias = document.getElementById("contador-materias");
-const mensajeFeedback = document.getElementById("mensaje-feedback");
 const avisoRecordatorio = document.getElementById("aviso-recordatorio");
 const avisoTexto = document.getElementById("aviso-texto");
 const btnCerrarAviso = document.getElementById("btn-cerrar-aviso");
@@ -148,13 +170,34 @@ const esNotaValida = (valor) => {
 };
 
 const mostrarFeedback = (texto, tipo = "info") => {
-  mensajeFeedback.textContent = texto;
-  mensajeFeedback.className = "feedback visible " + tipo;
+  Toastify({
+    text: texto,
+    duration: 3200,
+    gravity: "top",
+    position: "right",
+    close: true,
+    stopOnFocus: true,
+    style: { background: COLORES_FEEDBACK[tipo] ?? COLORES_FEEDBACK.info },
+  }).showToast();
+};
 
-  if (temporizadorFeedback) clearTimeout(temporizadorFeedback);
-  temporizadorFeedback = setTimeout(() => {
-    mensajeFeedback.classList.remove("visible");
-  }, 3200);
+const actualizarEstadoCarga = (texto, tipo) => {
+  estadoCarga.className = "estado-carga " + tipo;
+  estadoCarga.innerHTML =
+    (tipo === "cargando" ? '<span class="spinner" aria-hidden="true"></span>' : "") + texto;
+};
+
+const activarEstadoCarga = (cargando) => {
+  cargandoDatos = cargando;
+  botonIngresar.disabled = cargando || intentosRestantes <= 0;
+  btnRestaurarServidor.disabled = cargando;
+
+  if (cargando) {
+    actualizarEstadoCarga("Cargando materias desde el servidor…", "cargando");
+    contadorMaterias.textContent = "Cargando…";
+    contenedorItems.innerHTML =
+      '<p class="cargando-lista"><span class="spinner" aria-hidden="true"></span>Cargando materias…</p>';
+  }
 };
 
 const fechaCierreActas = () => {
@@ -372,14 +415,22 @@ const guardarNotas = (id, nota1, nota2) => {
   );
 };
 
-const vaciarMaterias = () => {
+const vaciarMaterias = async () => {
   if (materias.length === 0) {
     mostrarFeedback("No hay materias para vaciar.", "warn");
     return;
   }
 
-  const confirmar = window.confirm("¿Vaciar todas las materias del listado y del almacenamiento?");
-  if (!confirmar) return;
+  const { isConfirmed } = await Swal.fire({
+    icon: "warning",
+    title: "¿Vaciar el listado?",
+    text: "Se eliminarán todas las materias del listado y del almacenamiento del navegador.",
+    showCancelButton: true,
+    confirmButtonText: "Sí, vaciar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: COLOR_PELIGRO,
+  });
+  if (!isConfirmed) return;
 
   materias = [];
   siguienteId = 1;
@@ -389,11 +440,97 @@ const vaciarMaterias = () => {
   mostrarFeedback("Se vació el listado y el localStorage.", "warn");
 };
 
+const notificarErrorDeCarga = async (error, usarStorage) => {
+  const detalle = !usarStorage
+    ? "Tu listado actual no se modificó."
+    : materias.length > 0
+      ? "Mientras tanto se muestran las materias guardadas en este navegador."
+      : "Podés reintentar o agregar materias manualmente.";
+
+  const { isConfirmed } = await Swal.fire({
+    icon: "error",
+    title: "No se pudieron cargar las materias",
+    text: error.message,
+    footer: detalle,
+    showCancelButton: true,
+    confirmButtonText: "Reintentar",
+    cancelButtonText: "Cerrar",
+    confirmButtonColor: COLOR_PRIMARIO,
+  });
+
+  if (isConfirmed) await cargarMaterias({ usarStorage });
+};
+
+// usarStorage = true: si hay progreso guardado en localStorage, tiene prioridad sobre los datos del servidor
+const cargarMaterias = async ({ usarStorage = true } = {}) => {
+  let errorDeCarga = null;
+  activarEstadoCarga(true);
+
+  try {
+    await esperar(DEMORA_RED_SIMULADA_MS);
+    const delServidor = await obtenerMateriasDesdeJSON();
+    const guardado = usarStorage ? cargarEstadoDesdeStorage() : null;
+
+    materias = guardado?.lista ?? delServidor;
+    siguienteId = guardado?.proximoId ?? calcularProximoId(delServidor);
+    guardarMateriasEnStorage();
+
+    const plural = materias.length === 1 ? "materia" : "materias";
+    actualizarEstadoCarga("✅ " + materias.length + " " + plural + " listas para gestionar.", "ok");
+    mostrarFeedback(
+      guardado
+        ? "Materias cargadas con éxito. Se recuperó tu progreso guardado."
+        : "Materias cargadas con éxito desde el servidor (" + materias.length + ").",
+      "ok"
+    );
+  } catch (error) {
+    console.error("Error al cargar las materias:", error);
+    errorDeCarga = error;
+    actualizarEstadoCarga("❌ No se pudieron cargar las materias del servidor.", "error");
+
+    if (usarStorage) {
+      const guardado = cargarEstadoDesdeStorage();
+      materias = guardado?.lista ?? [];
+      siguienteId = guardado?.proximoId ?? 1;
+    }
+  } finally {
+    activarEstadoCarga(false);
+    renderizarMaterias();
+  }
+
+  if (storageCorrupto) {
+    mostrarFeedback("⚠️ Los datos guardados en el navegador estaban dañados y se descartaron.", "warn");
+    storageCorrupto = false;
+  }
+
+  if (errorDeCarga) await notificarErrorDeCarga(errorDeCarga, usarStorage);
+};
+
+const restaurarDesdeServidor = async () => {
+  const { isConfirmed } = await Swal.fire({
+    icon: "question",
+    title: "¿Restaurar datos del servidor?",
+    text: "Tu listado actual se reemplazará por las materias del archivo de datos.",
+    showCancelButton: true,
+    confirmButtonText: "Sí, restaurar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: COLOR_PRIMARIO,
+  });
+  if (!isConfirmed) return;
+
+  await cargarMaterias({ usarStorage: false });
+};
+
 const iniciarSesion = (event) => {
   event.preventDefault();
 
   if (intentosRestantes <= 0) {
     mostrarFeedback("Acceso bloqueado. Recargá la página para reintentar.", "error");
+    return;
+  }
+
+  if (cargandoDatos) {
+    mostrarFeedback("Esperá a que terminen de cargar las materias.", "info");
     return;
   }
 
@@ -411,13 +548,7 @@ const iniciarSesion = (event) => {
     nombreSesion.textContent = profesor;
     renderizarMaterias();
     programarRecordatorio();
-
-    if (storageCorrupto) {
-      mostrarFeedback("⚠️ Los datos guardados estaban dañados. Se restauró el listado inicial.", "warn");
-      storageCorrupto = false;
-    } else {
-      mostrarFeedback("Acceso permitido. Bienvenido/a, " + profesor + ".", "ok");
-    }
+    mostrarFeedback("Acceso permitido. Bienvenido/a, " + profesor + ".", "ok");
     return;
   }
 
@@ -429,7 +560,7 @@ const iniciarSesion = (event) => {
       ? "Credenciales incorrectas. Sin intentos restantes."
       : "Error de credenciales. Quedan " + intentosRestantes + " intentos.";
 
-  if (intentosRestantes === 0) formLogin.querySelector("button").disabled = true;
+  if (intentosRestantes === 0) botonIngresar.disabled = true;
   mostrarFeedback(mensajeError, "error");
 };
 
@@ -447,14 +578,11 @@ const cerrarSesion = () => {
 formLogin.addEventListener("submit", iniciarSesion);
 btnCerrarSesion.addEventListener("click", cerrarSesion);
 formMateria.addEventListener("submit", agregarMateriaDesdeFormulario);
-btnVaciarMaterias?.addEventListener("click", vaciarMaterias);
+btnVaciarMaterias.addEventListener("click", vaciarMaterias);
+btnRestaurarServidor.addEventListener("click", restaurarDesdeServidor);
 btnCerrarAviso.addEventListener("click", ocultarRecordatorio);
 
-inputBusqueda.addEventListener("keyup", () => {
-  renderizarMaterias();
-  const filtro = obtenerFiltro();
-  if (filtro) mostrarFeedback('Filtro activo: "' + filtro + '".', "info");
-});
+inputBusqueda.addEventListener("keyup", renderizarMaterias);
 
 btnPromedioGeneral.addEventListener("click", () => {
   const general = promedioGeneralCurso(materias);
@@ -498,6 +626,5 @@ contenedorItems.addEventListener("submit", (event) => {
   }
 });
 
-// Primera persistencia si el storage estaba vacío
-guardarMateriasEnStorage();
 actualizarIntentos();
+cargarMaterias();
