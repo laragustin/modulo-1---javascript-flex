@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simulador de Materias — DOM + Storage</title>
+  <title>Simulador de Materias — Asincronismo</title>
   <link rel="stylesheet" href="css/style.css">
   <script defer src="js/main.js"></script>
 </head>
@@ -34,6 +34,11 @@
       <div class="barra-usuario">
         <p>Sesión: <strong id="nombre-sesion"></strong></p>
         <button type="button" id="btn-cerrar-sesion" class="btn btn-secundario">Cerrar sesión</button>
+      </div>
+
+      <div id="aviso-recordatorio" class="aviso oculto" role="status" aria-live="polite">
+        <p id="aviso-texto"></p>
+        <button type="button" id="btn-cerrar-aviso" class="btn btn-secundario btn-chico" aria-label="Cerrar aviso">✕</button>
       </div>
 
       <div class="panel">

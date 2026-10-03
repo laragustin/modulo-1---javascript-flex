@@ -1,9 +1,11 @@
-// Pre-entrega 8 — Sincronización de estado entre DOM y Storage
+// Pre-entrega 9 — Asincronismo (setTimeout) y manejo de errores (try-catch-finally)
 
 const profesor = "Agustin";
 const contraseña = "1234";
 const STORAGE_KEY = "materiasSimulador";
 const STORAGE_ID_KEY = "siguienteIdMaterias";
+const DEMORA_RECORDATORIO_MS = 3000;
+const DIAS_HASTA_CIERRE_ACTAS = 10;
 
 class Materia {
   constructor(id, nombre, categoria, profesorAsignado) {
@@ -69,6 +71,8 @@ const guardarMateriasEnStorage = () => {
   localStorage.setItem(STORAGE_ID_KEY, String(siguienteId));
 };
 
+let storageCorrupto = false;
+
 const cargarEstadoDesdeStorage = () => {
   const raw = localStorage.getItem(STORAGE_KEY);
 
@@ -77,17 +81,29 @@ const cargarEstadoDesdeStorage = () => {
     return { lista: crearMateriasIniciales(), proximoId: 6 };
   }
 
-  const guardadas = JSON.parse(raw) ?? [];
-  const idGuardado = Number(localStorage.getItem(STORAGE_ID_KEY));
-  const maxId = guardadas.reduce((mayor, { id }) => (id > mayor ? id : mayor), 0);
-  const proximoId =
-    !Number.isNaN(idGuardado) && idGuardado > maxId
-      ? idGuardado
-      : maxId > 0
-        ? maxId + 1
-        : 1;
+  try {
+    const guardadas = JSON.parse(raw) ?? [];
+    if (!Array.isArray(guardadas)) {
+      throw new TypeError("El contenido guardado no es un listado de materias.");
+    }
 
-  return { lista: guardadas.map(materiaDesdeObjeto), proximoId };
+    const idGuardado = Number(localStorage.getItem(STORAGE_ID_KEY));
+    const maxId = guardadas.reduce((mayor, { id }) => (id > mayor ? id : mayor), 0);
+    const proximoId =
+      !Number.isNaN(idGuardado) && idGuardado > maxId
+        ? idGuardado
+        : maxId > 0
+          ? maxId + 1
+          : 1;
+
+    return { lista: guardadas.map(materiaDesdeObjeto), proximoId };
+  } catch (error) {
+    console.error("No se pudo leer el localStorage:", error);
+    storageCorrupto = true;
+    return { lista: crearMateriasIniciales(), proximoId: 6 };
+  } finally {
+    console.info("Lectura del localStorage finalizada.");
+  }
 };
 
 const vaciarStorageMaterias = () => {
@@ -101,6 +117,7 @@ let siguienteId = proximoId;
 let intentosRestantes = 3;
 let idResaltado = null;
 let temporizadorFeedback = null;
+let temporizadorRecordatorio = null;
 
 const seccionLogin = document.getElementById("seccion-login");
 const seccionApp = document.getElementById("seccion-app");
@@ -119,6 +136,9 @@ const btnVaciarMaterias = document.getElementById("btn-vaciar-materias");
 const contenedorItems = document.getElementById("contenedor-items");
 const contadorMaterias = document.getElementById("contador-materias");
 const mensajeFeedback = document.getElementById("mensaje-feedback");
+const avisoRecordatorio = document.getElementById("aviso-recordatorio");
+const avisoTexto = document.getElementById("aviso-texto");
+const btnCerrarAviso = document.getElementById("btn-cerrar-aviso");
 
 const esTextoValido = (valor) => valor !== null && valor.trim() !== "" && isNaN(Number(valor));
 
@@ -135,6 +155,47 @@ const mostrarFeedback = (texto, tipo = "info") => {
   temporizadorFeedback = setTimeout(() => {
     mensajeFeedback.classList.remove("visible");
   }, 3200);
+};
+
+const fechaCierreActas = () => {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() + DIAS_HASTA_CIERRE_ACTAS);
+  return fecha.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+};
+
+const armarTextoRecordatorio = () => {
+  const pendientes = materias.filter((materia) => materia.calcularPromedio() === null);
+
+  if (materias.length === 0) {
+    return "🔔 Tu listado está vacío. Agregá las materias que dictás para empezar a cargar notas.";
+  }
+
+  if (pendientes.length === 0) {
+    const general = promedioGeneralCurso(materias);
+    return "🔔 ¡Todas tus materias tienen notas cargadas! Promedio general del curso: " + general.toFixed(2) + ".";
+  }
+
+  const nombres = pendientes.map(({ nombre }) => nombre).join(", ");
+  const plural = pendientes.length === 1 ? "materia" : "materias";
+  return (
+    "🔔 Recordatorio: tenés " + pendientes.length + " " + plural + " sin notas (" + nombres +
+    "). El cierre de actas es el " + fechaCierreActas() + "."
+  );
+};
+
+const ocultarRecordatorio = () => {
+  avisoRecordatorio.classList.add("oculto");
+};
+
+const programarRecordatorio = () => {
+  if (temporizadorRecordatorio) clearTimeout(temporizadorRecordatorio);
+  ocultarRecordatorio();
+
+  temporizadorRecordatorio = setTimeout(() => {
+    avisoTexto.textContent = armarTextoRecordatorio();
+    avisoRecordatorio.classList.remove("oculto");
+    temporizadorRecordatorio = null;
+  }, DEMORA_RECORDATORIO_MS);
 };
 
 const actualizarIntentos = () => {
@@ -285,19 +346,28 @@ const marcarLograda = (id) => {
 
 const guardarNotas = (id, nota1, nota2) => {
   const materia = materias.find((item) => item.id === id);
-  if (!materia) return;
-
-  if (!esNotaValida(nota1) || !esNotaValida(nota2)) {
-    mostrarFeedback("Las notas deben ser números mayores a 0 y hasta 10.", "error");
-    return;
+  if (!materia) {
+    throw new Error("La materia ya no existe en el listado.");
   }
 
-  const { nombre } = materia;
+  if (!esNotaValida(nota1) || !esNotaValida(nota2)) {
+    throw new RangeError("Las notas deben ser números mayores a 0 y hasta 10.");
+  }
+
+  const notasAnteriores = { nota1: materia.nota1, nota2: materia.nota2 };
   materia.registrarNotas(nota1, nota2);
-  guardarMateriasEnStorage();
-  renderizarMaterias();
+
+  try {
+    guardarMateriasEnStorage();
+  } catch (error) {
+    // Si el storage falla (ej. cuota llena), revertimos para no desincronizar DOM y Storage
+    materia.nota1 = notasAnteriores.nota1;
+    materia.nota2 = notasAnteriores.nota2;
+    throw new Error("No se pudo guardar en el almacenamiento del navegador.");
+  }
+
   mostrarFeedback(
-    "Notas guardadas en " + nombre + ". Promedio: " + materia.calcularPromedio().toFixed(2),
+    "Notas guardadas en " + materia.nombre + ". Promedio: " + materia.calcularPromedio().toFixed(2),
     "ok"
   );
 };
@@ -340,7 +410,14 @@ const iniciarSesion = (event) => {
     seccionApp.classList.remove("oculto");
     nombreSesion.textContent = profesor;
     renderizarMaterias();
-    mostrarFeedback("Acceso permitido. Bienvenido/a, " + profesor + ".", "ok");
+    programarRecordatorio();
+
+    if (storageCorrupto) {
+      mostrarFeedback("⚠️ Los datos guardados estaban dañados. Se restauró el listado inicial.", "warn");
+      storageCorrupto = false;
+    } else {
+      mostrarFeedback("Acceso permitido. Bienvenido/a, " + profesor + ".", "ok");
+    }
     return;
   }
 
@@ -357,6 +434,9 @@ const iniciarSesion = (event) => {
 };
 
 const cerrarSesion = () => {
+  if (temporizadorRecordatorio) clearTimeout(temporizadorRecordatorio);
+  temporizadorRecordatorio = null;
+  ocultarRecordatorio();
   seccionApp.classList.add("oculto");
   seccionLogin.classList.remove("oculto");
   formLogin.reset();
@@ -368,6 +448,7 @@ formLogin.addEventListener("submit", iniciarSesion);
 btnCerrarSesion.addEventListener("click", cerrarSesion);
 formMateria.addEventListener("submit", agregarMateriaDesdeFormulario);
 btnVaciarMaterias?.addEventListener("click", vaciarMaterias);
+btnCerrarAviso.addEventListener("click", ocultarRecordatorio);
 
 inputBusqueda.addEventListener("keyup", () => {
   renderizarMaterias();
@@ -399,10 +480,22 @@ contenedorItems.addEventListener("submit", (event) => {
   if (!form) return;
 
   event.preventDefault();
-  const tarjeta = form.closest(".item-materia");
-  const id = Number(tarjeta?.dataset?.id);
-  const datos = new FormData(form);
-  guardarNotas(id, datos.get("nota1"), datos.get("nota2"));
+  const botonGuardar = form.querySelector("button[type='submit']");
+  botonGuardar.disabled = true;
+
+  try {
+    const tarjeta = form.closest(".item-materia");
+    const id = Number(tarjeta?.dataset?.id);
+    const datos = new FormData(form);
+    guardarNotas(id, datos.get("nota1"), datos.get("nota2"));
+  } catch (error) {
+    console.error("Error al guardar notas:", error);
+    mostrarFeedback("⚠️ No se pudo procesar la operación: " + error.message + " Intentá de nuevo.", "error");
+  } finally {
+    // Se ejecuta siempre: re-sincroniza el DOM con el estado (descarta valores inválidos en los inputs)
+    botonGuardar.disabled = false;
+    renderizarMaterias();
+  }
 });
 
 // Primera persistencia si el storage estaba vacío
