@@ -1,630 +1,451 @@
-// Pre-entrega 10 — fetch + async/await a un JSON local y librerías (Toastify + SweetAlert2)
+// Lógica del simulador: estado, circuito de cierre de actas y eventos
 
-const profesor = "Agustin";
-const contraseña = "1234";
-const DATA_URL = "./data/materias.json";
-const STORAGE_KEY = "materiasSimulador";
-const STORAGE_ID_KEY = "siguienteIdMaterias";
 const DEMORA_RECORDATORIO_MS = 3000;
-const DEMORA_RED_SIMULADA_MS = 1200;
-const DIAS_HASTA_CIERRE_ACTAS = 10;
-const COLOR_PRIMARIO = "#0f6b7a";
-const COLOR_PELIGRO = "#a33b3b";
-
-const COLORES_FEEDBACK = {
-  ok: "linear-gradient(135deg, #1f7a4d, #2e9e66)",
-  error: "linear-gradient(135deg, #a33b3b, #c55252)",
-  warn: "linear-gradient(135deg, #8a5a12, #b7791f)",
-  info: "linear-gradient(135deg, #0a4f5a, #0f6b7a)",
-};
-
-class Materia {
-  constructor(id, nombre, categoria, profesorAsignado) {
-    this.id = id;
-    this.nombre = nombre;
-    this.categoria = categoria;
-    this.profesorAsignado = profesorAsignado;
-    this.nota1 = null;
-    this.nota2 = null;
-    this.lograda = false;
-  }
-
-  registrarNotas(nota1, nota2) {
-    this.nota1 = Number(nota1);
-    this.nota2 = Number(nota2);
-  }
-
-  calcularPromedio() {
-    return this.nota1 === null || this.nota2 === null
-      ? null
-      : (this.nota1 + this.nota2) / 2;
-  }
-
-  informarEstado() {
-    const promedio = this.calcularPromedio();
-    const textoPromedio = promedio !== null ? promedio.toFixed(2) : "sin notas cargadas";
-    return "Materia: " + this.nombre + " | Categoria: " + this.categoria + " | Promedio: " + textoPromedio;
-  }
-}
-
-// Destructuring: reconstruye una instancia Materia desde un objeto del JSON o del storage
-const materiaDesdeObjeto = ({
-  id,
-  nombre,
-  categoria,
-  profesorAsignado,
-  nota1 = null,
-  nota2 = null,
-  lograda = false,
-}) => {
-  const materia = new Materia(id, nombre, categoria, profesorAsignado ?? profesor);
-  if (nota1 !== null && nota2 !== null) materia.registrarNotas(nota1, nota2);
-  materia.lograda = lograda ?? false;
-  return materia;
-};
-
-const guardarMateriasEnStorage = () => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(materias));
-  localStorage.setItem(STORAGE_ID_KEY, String(siguienteId));
-};
-
-const calcularProximoId = (lista, idGuardado = 0) => {
-  const maxId = lista.reduce((mayor, { id }) => (id > mayor ? id : mayor), 0);
-  return !Number.isNaN(idGuardado) && idGuardado > maxId ? idGuardado : maxId + 1;
-};
-
-let storageCorrupto = false;
-
-// Devuelve null si no hay nada guardado (o si estaba dañado) para que se usen los datos del servidor
-const cargarEstadoDesdeStorage = () => {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw === null) return null;
-
-  try {
-    const guardadas = JSON.parse(raw) ?? [];
-    if (!Array.isArray(guardadas)) {
-      throw new TypeError("El contenido guardado no es un listado de materias.");
-    }
-
-    const lista = guardadas.map(materiaDesdeObjeto);
-    const idGuardado = Number(localStorage.getItem(STORAGE_ID_KEY));
-    return { lista, proximoId: calcularProximoId(lista, idGuardado) };
-  } catch (error) {
-    console.error("No se pudo leer el localStorage:", error);
-    storageCorrupto = true;
-    return null;
-  } finally {
-    console.info("Lectura del localStorage finalizada.");
-  }
-};
-
-const vaciarStorageMaterias = () => {
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem(STORAGE_ID_KEY);
-};
-
-// Simula la latencia de una red real para que el estado "cargando" sea visible
-const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const obtenerMateriasDesdeJSON = async () => {
-  let respuesta;
-  try {
-    respuesta = await fetch(DATA_URL);
-  } catch {
-    throw new Error("No se pudo conectar con el servidor de datos. Revisá tu conexión.");
-  }
-
-  if (!respuesta.ok) {
-    throw new Error("El servidor respondió con un error (" + respuesta.status + " " + respuesta.statusText + ").");
-  }
-
-  let datos;
-  try {
-    datos = await respuesta.json();
-  } catch {
-    throw new SyntaxError("El archivo de datos tiene un formato inválido.");
-  }
-
-  if (!Array.isArray(datos)) {
-    throw new TypeError("El archivo de datos no contiene un listado de materias.");
-  }
-
-  return datos.map(materiaDesdeObjeto);
-};
+const DURACION_RESALTADO_MS = 1800;
 
 let materias = [];
-let siguienteId = 1;
-let intentosRestantes = 3;
+let idsEnActa = [];
+let historialActas = [];
 let idResaltado = null;
-let temporizadorRecordatorio = null;
 let cargandoDatos = false;
+let temporizadorRecordatorio = null;
 
-const seccionLogin = document.getElementById("seccion-login");
-const seccionApp = document.getElementById("seccion-app");
-const formLogin = document.getElementById("form-login");
-const botonIngresar = formLogin.querySelector("button[type='submit']");
-const estadoCarga = document.getElementById("estado-carga");
-const inputUsuario = document.getElementById("input-usuario");
-const inputContrasena = document.getElementById("input-contrasena");
-const intentosRestantesTexto = document.getElementById("intentos-restantes");
-const nombreSesion = document.getElementById("nombre-sesion");
-const btnCerrarSesion = document.getElementById("btn-cerrar-sesion");
-const formMateria = document.getElementById("form-materia");
-const inputNombre = document.getElementById("input-nombre");
-const inputCategoria = document.getElementById("input-categoria");
-const inputBusqueda = document.getElementById("input-busqueda");
-const btnPromedioGeneral = document.getElementById("btn-promedio-general");
-const btnVaciarMaterias = document.getElementById("btn-vaciar-materias");
-const btnRestaurarServidor = document.getElementById("btn-restaurar-servidor");
-const contenedorItems = document.getElementById("contenedor-items");
-const contadorMaterias = document.getElementById("contador-materias");
-const avisoRecordatorio = document.getElementById("aviso-recordatorio");
-const avisoTexto = document.getElementById("aviso-texto");
-const btnCerrarAviso = document.getElementById("btn-cerrar-aviso");
-
-const esTextoValido = (valor) => valor !== null && valor.trim() !== "" && isNaN(Number(valor));
-
-const esNotaValida = (valor) => {
-  const numero = Number(valor);
-  return !Number.isNaN(numero) && numero > 0 && numero <= 10;
+const guardarEstado = () => {
+  guardarEnStorage(STORAGE_KEYS.materias, materias);
+  guardarEnStorage(STORAGE_KEYS.actaEnCurso, idsEnActa);
+  guardarEnStorage(STORAGE_KEYS.historial, historialActas);
 };
 
-const mostrarFeedback = (texto, tipo = "info") => {
-  Toastify({
-    text: texto,
-    duration: 3200,
-    gravity: "top",
-    position: "right",
-    close: true,
-    stopOnFocus: true,
-    style: { background: COLORES_FEEDBACK[tipo] ?? COLORES_FEEDBACK.info },
-  }).showToast();
+const buscarMateria = (id) => materias.find((materia) => materia.id === id);
+
+const obtenerMateriasDelActa = () =>
+  idsEnActa.map(buscarMateria).filter((materia) => materia !== undefined);
+
+// Descarta del acta en curso las materias que ya no existen o que ya fueron cerradas
+const sincronizarActa = () => {
+  idsEnActa = idsEnActa.filter((id) => {
+    const materia = buscarMateria(id);
+    return materia !== undefined && !materia.estaCerrada();
+  });
 };
 
-const actualizarEstadoCarga = (texto, tipo) => {
-  estadoCarga.className = "estado-carga " + tipo;
-  estadoCarga.innerHTML =
-    (tipo === "cargando" ? '<span class="spinner" aria-hidden="true"></span>' : "") + texto;
+const obtenerCategorias = () =>
+  [...new Set(materias.map(({ categoria }) => categoria))].sort((primera, segunda) =>
+    primera.localeCompare(segunda)
+  );
+
+const obtenerMateriasFiltradas = () => {
+  const busqueda = normalizarTexto(inputBusqueda.value);
+  const categoriaElegida = selectCategoria.value;
+
+  return materias.filter(({ nombre, categoria }) => {
+    const coincideNombre = busqueda === "" || normalizarTexto(nombre).includes(busqueda);
+    const coincideCategoria = categoriaElegida === "todas" || categoria === categoriaElegida;
+    return coincideNombre && coincideCategoria;
+  });
 };
 
-const activarEstadoCarga = (cargando) => {
-  cargandoDatos = cargando;
-  botonIngresar.disabled = cargando || intentosRestantes <= 0;
-  btnRestaurarServidor.disabled = cargando;
+const renderizarMateriasFiltradas = () =>
+  renderizarMaterias(obtenerMateriasFiltradas(), idsEnActa, idResaltado, materias.length > 0);
 
-  if (cargando) {
-    actualizarEstadoCarga("Cargando materias desde el servidor…", "cargando");
-    contadorMaterias.textContent = "Cargando…";
-    contenedorItems.innerHTML =
-      '<p class="cargando-lista"><span class="spinner" aria-hidden="true"></span>Cargando materias…</p>';
-  }
-};
-
-const fechaCierreActas = () => {
-  const fecha = new Date();
-  fecha.setDate(fecha.getDate() + DIAS_HASTA_CIERRE_ACTAS);
-  return fecha.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+const renderizarTodo = () => {
+  renderizarCategorias(obtenerCategorias());
+  renderizarMateriasFiltradas();
+  renderizarActa(obtenerMateriasDelActa());
+  renderizarHistorial(historialActas);
 };
 
 const armarTextoRecordatorio = () => {
-  const pendientes = materias.filter((materia) => materia.calcularPromedio() === null);
+  const pendientes = materias.filter((materia) => !materia.estaCerrada() && !materia.tieneNotas());
 
   if (materias.length === 0) {
     return "🔔 Tu listado está vacío. Agregá las materias que dictás para empezar a cargar notas.";
   }
 
   if (pendientes.length === 0) {
-    const general = promedioGeneralCurso(materias);
-    return "🔔 ¡Todas tus materias tienen notas cargadas! Promedio general del curso: " + general.toFixed(2) + ".";
+    return "🔔 Todas tus materias abiertas tienen notas. ¡Ya podés armar y cerrar el acta!";
   }
 
   const nombres = pendientes.map(({ nombre }) => nombre).join(", ");
-  const plural = pendientes.length === 1 ? "materia" : "materias";
   return (
-    "🔔 Recordatorio: tenés " + pendientes.length + " " + plural + " sin notas (" + nombres +
-    "). El cierre de actas es el " + fechaCierreActas() + "."
+    "🔔 Recordatorio: tenés " + pendientes.length + (pendientes.length === 1 ? " materia" : " materias") +
+    " sin notas (" + nombres + "). Cargalas antes de cerrar el acta."
   );
 };
 
-const ocultarRecordatorio = () => {
-  avisoRecordatorio.classList.add("oculto");
-};
-
 const programarRecordatorio = () => {
-  if (temporizadorRecordatorio) clearTimeout(temporizadorRecordatorio);
+  clearTimeout(temporizadorRecordatorio);
   ocultarRecordatorio();
-
-  temporizadorRecordatorio = setTimeout(() => {
-    avisoTexto.textContent = armarTextoRecordatorio();
-    avisoRecordatorio.classList.remove("oculto");
-    temporizadorRecordatorio = null;
-  }, DEMORA_RECORDATORIO_MS);
+  temporizadorRecordatorio = setTimeout(() => mostrarRecordatorio(armarTextoRecordatorio()), DEMORA_RECORDATORIO_MS);
 };
 
-const actualizarIntentos = () => {
-  intentosRestantesTexto.textContent = "Intentos restantes: " + intentosRestantes;
+const ofrecerCargarOCrearMaterias = async () => {
+  const { isConfirmed, isDenied } = await Swal.fire({
+    icon: "info",
+    title: "No hay materias cargadas",
+    text: "Podés volver a intentar la carga o crear tu primera materia.",
+    showDenyButton: true,
+    showCancelButton: true,
+    confirmButtonText: "Cargar materias",
+    denyButtonText: "Crear materia",
+    cancelButtonText: "Cerrar",
+    confirmButtonColor: COLOR_PRIMARIO,
+    denyButtonColor: "#3d5a66",
+  });
+
+  if (isConfirmed) await cargarMaterias({ priorizarStorage: false });
+  if (isDenied) enfocarFormularioMateria();
 };
 
-const obtenerFiltro = () => inputBusqueda.value.trim().toLowerCase();
-
-const materiasFiltradas = () => {
-  const filtro = obtenerFiltro();
-  return !filtro
-    ? materias
-    : materias.filter(({ nombre, categoria }) => {
-        const nombreLower = nombre.toLowerCase();
-        const categoriaLower = categoria.toLowerCase();
-        return nombreLower.includes(filtro) || categoriaLower.includes(filtro);
-      });
-};
-
-const promedioGeneralCurso = (lista) => {
-  const conNotas = lista.filter((materia) => materia.calcularPromedio() !== null);
-  if (conNotas.length === 0) return null;
-  const suma = conNotas.reduce((acc, materia) => acc + materia.calcularPromedio(), 0);
-  return suma / conNotas.length;
-};
-
-const renderizarMaterias = () => {
-  const lista = materiasFiltradas();
-  contadorMaterias.textContent = lista.length + (lista.length === 1 ? " materia" : " materias");
-
-  if (lista.length === 0) {
-    contenedorItems.innerHTML =
-      '<p class="vacio">No hay materias para mostrar. Probá otra búsqueda o agregá una nueva.</p>';
+const notificarErrorDeCarga = async () => {
+  if (materias.length > 0) {
+    mostrarFeedback("Se muestran las materias guardadas.", "info");
     return;
   }
-
-  contenedorItems.innerHTML = lista
-    .map((materia) => {
-      const { id, nombre, categoria, profesorAsignado, nota1, nota2, lograda } = materia;
-      const promedio = materia.calcularPromedio();
-      const textoPromedio = promedio !== null ? promedio.toFixed(2) : "sin notas";
-      const aprobada = promedio !== null && promedio >= 7;
-
-      const clases = ["item-materia"];
-      if (id === idResaltado) clases.push("recien-agregado");
-      if (aprobada || lograda) clases.push("aprobada");
-
-      const estadoTexto = lograda
-        ? "Lograda"
-        : aprobada
-          ? "Aprobada"
-          : promedio !== null
-            ? "Desaprobada"
-            : "Pendiente";
-
-      const estadoClase = lograda || aprobada ? "ok" : promedio === null ? "pendiente" : "";
-
-      return `
-        <article class="${clases.join(" ")}" data-id="${id}">
-          <div class="item-cabecera">
-            <div>
-              <h3>${nombre}</h3>
-              <p>Categoría: ${categoria} · Profesor: ${profesorAsignado}</p>
-              <p>Nota 1: ${nota1 ?? "-"} · Nota 2: ${nota2 ?? "-"} · Promedio: ${textoPromedio}</p>
-              <span class="estado-chip ${estadoClase}">${estadoTexto}</span>
-            </div>
-            <div class="item-acciones">
-              <button type="button" class="btn btn-exito btn-chico" data-accion="lograr">Logrado</button>
-              <button type="button" class="btn btn-peligro btn-chico" data-accion="eliminar">Eliminar</button>
-            </div>
-          </div>
-          <form class="item-notas" data-accion="notas">
-            <label>
-              Nota 1
-              <input type="number" name="nota1" min="1" max="10" step="any" placeholder="1 a 10" value="${nota1 ?? ""}">
-            </label>
-            <label>
-              Nota 2
-              <input type="number" name="nota2" min="1" max="10" step="any" placeholder="1 a 10" value="${nota2 ?? ""}">
-            </label>
-            <button type="submit" class="btn btn-secundario btn-chico">Guardar notas</button>
-          </form>
-        </article>
-      `;
-    })
-    .join("");
+  await ofrecerCargarOCrearMaterias();
 };
 
-const agregarMateriaDesdeFormulario = (event) => {
+// Por defecto el progreso guardado en localStorage tiene prioridad sobre los datos del JSON
+const cargarMaterias = async ({ priorizarStorage = true } = {}) => {
+  let huboErrorDeCarga = false;
+  cargandoDatos = true;
+  mostrarCargando(true);
+
+  try {
+    await esperar(DEMORA_RED_SIMULADA_MS);
+    const materiasDelServidor = await obtenerMateriasDesdeJSON();
+    const materiasGuardadas = priorizarStorage ? leerMateriasGuardadas() : null;
+
+    materias = materiasGuardadas || materiasDelServidor;
+    idsEnActa = leerListaDeStorage(STORAGE_KEYS.actaEnCurso) || [];
+    historialActas = leerListaDeStorage(STORAGE_KEYS.historial) || [];
+    sincronizarActa();
+    guardarEstado();
+
+    actualizarEstadoCarga("✅ " + materias.length + " materias listas para gestionar.", "ok");
+    mostrarFeedback(
+      materiasGuardadas ? "Se recuperó tu progreso guardado." : "Materias cargadas (" + materias.length + ").",
+      "ok"
+    );
+  } catch {
+    huboErrorDeCarga = true;
+    actualizarEstadoCarga("", "");
+    materias = leerMateriasGuardadas() || [];
+    idsEnActa = leerListaDeStorage(STORAGE_KEYS.actaEnCurso) || [];
+    historialActas = leerListaDeStorage(STORAGE_KEYS.historial) || [];
+    sincronizarActa();
+  } finally {
+    cargandoDatos = false;
+    mostrarCargando(false);
+    renderizarTodo();
+  }
+
+  huboErrorDeCarga ? await notificarErrorDeCarga() : programarRecordatorio();
+};
+
+const agregarMateria = (event) => {
   event.preventDefault();
+  if (cargandoDatos) return;
 
   const nombre = inputNombre.value.trim();
   const categoria = inputCategoria.value.trim();
 
-  if (!esTextoValido(nombre)) {
-    mostrarFeedback("El nombre de la materia debe ser un texto válido.", "error");
+  if (!esTextoValido(nombre) || !esTextoValido(categoria)) {
+    mostrarFeedback("El nombre y la categoría deben ser textos válidos.", "error");
     return;
   }
 
-  if (!esTextoValido(categoria)) {
-    mostrarFeedback("La categoría debe ser un texto válido.", "error");
+  const yaExiste = materias.some((materia) => normalizarTexto(materia.nombre) === normalizarTexto(nombre));
+  if (yaExiste) {
+    mostrarFeedback('Ya existe una materia llamada "' + nombre + '".', "warn");
     return;
   }
 
-  const nueva = new Materia(siguienteId, nombre.toLowerCase(), categoria.toLowerCase(), profesor);
-  siguienteId += 1;
-  materias.push(nueva);
-  idResaltado = nueva.id;
+  const nuevaMateria = new Materia(calcularProximoId(materias), nombre, categoria, PROFESOR_POR_DEFECTO);
+  materias.push(nuevaMateria);
+  idResaltado = nuevaMateria.id;
+  guardarEstado();
 
-  guardarMateriasEnStorage();
   formMateria.reset();
   inputNombre.focus();
-  renderizarMaterias();
-  mostrarFeedback('Se agregó "' + nueva.nombre + '" a la lista.', "ok");
+  renderizarTodo();
+  mostrarFeedback('Se agregó "' + nombre + '" al listado.', "ok");
 
   setTimeout(() => {
     idResaltado = null;
-    renderizarMaterias();
-  }, 1800);
-};
-
-const eliminarMateria = (id) => {
-  const materia = materias.find((item) => item.id === id);
-  if (!materia) return;
-
-  const { nombre } = materia;
-  const tarjeta = contenedorItems.querySelector('[data-id="' + id + '"]');
-  tarjeta?.classList.add("eliminando");
-
-  setTimeout(() => {
-    materias = materias.filter((item) => item.id !== id);
-    guardarMateriasEnStorage();
-    renderizarMaterias();
-    mostrarFeedback('Se eliminó "' + nombre + '".', "warn");
-  }, 220);
-};
-
-const marcarLograda = (id) => {
-  const materia = materias.find((item) => item.id === id);
-  if (!materia) return;
-
-  const { nombre } = materia;
-  materia.lograda = true;
-  guardarMateriasEnStorage();
-  renderizarMaterias();
-  mostrarFeedback('"' + nombre + '" marcada como lograda.', "ok");
+    renderizarMateriasFiltradas();
+  }, DURACION_RESALTADO_MS);
 };
 
 const guardarNotas = (id, nota1, nota2) => {
-  const materia = materias.find((item) => item.id === id);
-  if (!materia) {
-    throw new Error("La materia ya no existe en el listado.");
-  }
-
+  const materia = buscarMateria(id);
+  if (!materia) throw new Error("La materia ya no existe en el listado.");
+  if (materia.estaCerrada()) throw new Error("La materia pertenece a un acta cerrada.");
   if (!esNotaValida(nota1) || !esNotaValida(nota2)) {
-    throw new RangeError("Las notas deben ser números mayores a 0 y hasta 10.");
+    throw new RangeError("Las notas deben ser números entre 1 y 10.");
   }
 
-  const notasAnteriores = { nota1: materia.nota1, nota2: materia.nota2 };
   materia.registrarNotas(nota1, nota2);
-
-  try {
-    guardarMateriasEnStorage();
-  } catch (error) {
-    // Si el storage falla (ej. cuota llena), revertimos para no desincronizar DOM y Storage
-    materia.nota1 = notasAnteriores.nota1;
-    materia.nota2 = notasAnteriores.nota2;
-    throw new Error("No se pudo guardar en el almacenamiento del navegador.");
-  }
-
+  guardarEstado();
   mostrarFeedback(
-    "Notas guardadas en " + materia.nombre + ". Promedio: " + materia.calcularPromedio().toFixed(2),
+    "Notas guardadas en " + materia.nombre + ". Promedio: " + formatearPromedio(materia.calcularPromedio()),
     "ok"
   );
 };
 
-const vaciarMaterias = async () => {
-  if (materias.length === 0) {
-    mostrarFeedback("No hay materias para vaciar.", "warn");
-    return;
-  }
+const alternarMateriaEnActa = (id) => {
+  const materia = buscarMateria(id);
+  if (!materia || materia.estaCerrada()) return;
 
-  const { isConfirmed } = await Swal.fire({
-    icon: "warning",
-    title: "¿Vaciar el listado?",
-    text: "Se eliminarán todas las materias del listado y del almacenamiento del navegador.",
-    showCancelButton: true,
-    confirmButtonText: "Sí, vaciar",
-    cancelButtonText: "Cancelar",
-    confirmButtonColor: COLOR_PELIGRO,
-  });
-  if (!isConfirmed) return;
+  const { nombre } = materia;
+  const estaEnActa = idsEnActa.includes(id);
+  idsEnActa = estaEnActa ? idsEnActa.filter((idEnActa) => idEnActa !== id) : [...idsEnActa, id];
+  guardarEstado();
+  renderizarTodo();
 
-  materias = [];
-  siguienteId = 1;
-  vaciarStorageMaterias();
-  guardarMateriasEnStorage();
-  renderizarMaterias();
-  mostrarFeedback("Se vació el listado y el localStorage.", "warn");
-};
-
-const notificarErrorDeCarga = async (error, usarStorage) => {
-  const detalle = !usarStorage
-    ? "Tu listado actual no se modificó."
-    : materias.length > 0
-      ? "Mientras tanto se muestran las materias guardadas en este navegador."
-      : "Podés reintentar o agregar materias manualmente.";
-
-  const { isConfirmed } = await Swal.fire({
-    icon: "error",
-    title: "No se pudieron cargar las materias",
-    text: error.message,
-    footer: detalle,
-    showCancelButton: true,
-    confirmButtonText: "Reintentar",
-    cancelButtonText: "Cerrar",
-    confirmButtonColor: COLOR_PRIMARIO,
-  });
-
-  if (isConfirmed) await cargarMaterias({ usarStorage });
-};
-
-// usarStorage = true: si hay progreso guardado en localStorage, tiene prioridad sobre los datos del servidor
-const cargarMaterias = async ({ usarStorage = true } = {}) => {
-  let errorDeCarga = null;
-  activarEstadoCarga(true);
-
-  try {
-    await esperar(DEMORA_RED_SIMULADA_MS);
-    const delServidor = await obtenerMateriasDesdeJSON();
-    const guardado = usarStorage ? cargarEstadoDesdeStorage() : null;
-
-    materias = guardado?.lista ?? delServidor;
-    siguienteId = guardado?.proximoId ?? calcularProximoId(delServidor);
-    guardarMateriasEnStorage();
-
-    const plural = materias.length === 1 ? "materia" : "materias";
-    actualizarEstadoCarga("✅ " + materias.length + " " + plural + " listas para gestionar.", "ok");
+  if (estaEnActa) {
+    mostrarFeedback('Se quitó "' + nombre + '" del acta.', "info");
+  } else {
     mostrarFeedback(
-      guardado
-        ? "Materias cargadas con éxito. Se recuperó tu progreso guardado."
-        : "Materias cargadas con éxito desde el servidor (" + materias.length + ").",
-      "ok"
+      materia.tieneNotas()
+        ? 'Se agregó "' + nombre + '" al acta.'
+        : '"' + nombre + '" se agregó al acta, pero todavía no tiene notas.',
+      materia.tieneNotas() ? "ok" : "warn"
     );
-  } catch (error) {
-    console.error("Error al cargar las materias:", error);
-    errorDeCarga = error;
-    actualizarEstadoCarga("❌ No se pudieron cargar las materias del servidor.", "error");
-
-    if (usarStorage) {
-      const guardado = cargarEstadoDesdeStorage();
-      materias = guardado?.lista ?? [];
-      siguienteId = guardado?.proximoId ?? 1;
-    }
-  } finally {
-    activarEstadoCarga(false);
-    renderizarMaterias();
   }
-
-  if (storageCorrupto) {
-    mostrarFeedback("⚠️ Los datos guardados en el navegador estaban dañados y se descartaron.", "warn");
-    storageCorrupto = false;
-  }
-
-  if (errorDeCarga) await notificarErrorDeCarga(errorDeCarga, usarStorage);
 };
 
-const restaurarDesdeServidor = async () => {
-  const { isConfirmed } = await Swal.fire({
-    icon: "question",
-    title: "¿Restaurar datos del servidor?",
-    text: "Tu listado actual se reemplazará por las materias del archivo de datos.",
-    showCancelButton: true,
-    confirmButtonText: "Sí, restaurar",
-    cancelButtonText: "Cancelar",
+const eliminarMateria = async (id) => {
+  const materia = buscarMateria(id);
+  if (!materia) return;
+
+  const { nombre } = materia;
+  const confirmado = await confirmarAccion({
+    titulo: "¿Eliminar materia?",
+    contenidoHTML: 'Se eliminará <strong>"' + escaparHTML(nombre) + '"</strong> del listado y del acta en curso.',
+    textoBoton: "Sí, eliminar",
+    esPeligrosa: true,
+  });
+  if (!confirmado) return;
+
+  materias = materias.filter((item) => item.id !== id);
+  sincronizarActa();
+  guardarEstado();
+  renderizarTodo();
+  mostrarFeedback('Se eliminó "' + nombre + '".', "warn");
+};
+
+const vaciarActa = async () => {
+  const confirmado = await confirmarAccion({
+    titulo: "¿Vaciar el acta en curso?",
+    contenidoHTML: "Las materias vuelven al listado sin cambios en sus notas.",
+    textoBoton: "Sí, vaciar",
+    esPeligrosa: true,
+  });
+  if (!confirmado) return;
+
+  idsEnActa = [];
+  guardarEstado();
+  renderizarTodo();
+  mostrarFeedback("Se vació el acta en curso.", "warn");
+};
+
+const confirmarCierreDeActa = async () => {
+  const materiasDelActa = obtenerMateriasDelActa();
+  if (materiasDelActa.length === 0) return;
+
+  const sinNotas = materiasDelActa.filter((materia) => !materia.tieneNotas());
+  if (sinNotas.length > 0) {
+    await Swal.fire({
+      icon: "warning",
+      title: "Faltan notas",
+      html:
+        "Para cerrar el acta primero cargá las notas de: <strong>" +
+        sinNotas.map(({ nombre }) => escaparHTML(nombre)).join(", ") +
+        "</strong>.",
+      confirmButtonColor: COLOR_PRIMARIO,
+    });
+    return;
+  }
+
+  const numeroActa = calcularProximoNumeroActa(historialActas);
+  const resumen = calcularResumen(materiasDelActa);
+
+  const confirmado = await confirmarAccion({
+    titulo: "¿Cerrar el acta N° " + numeroActa + "?",
+    contenidoHTML:
+      plantillaResumen(resumen) + '<p class="detalle-meta">Las materias quedarán cerradas y no podrán modificarse.</p>',
+    textoBoton: "Confirmar cierre",
+    icono: "question",
+  });
+  if (!confirmado) return;
+
+  const actaCerrada = {
+    numero: numeroActa,
+    fecha: new Date().toISOString(),
+    materias: materiasDelActa.map((materia) => {
+      const { id, nombre, categoria, nota1, nota2 } = materia;
+      return {
+        id,
+        nombre,
+        categoria,
+        nota1,
+        nota2,
+        promedio: materia.calcularPromedio(),
+        estado: materia.obtenerEstado(),
+      };
+    }),
+    resumen,
+  };
+
+  materiasDelActa.forEach((materia) => {
+    materia.numeroActa = numeroActa;
+  });
+  historialActas.push(actaCerrada);
+  idsEnActa = [];
+  guardarEstado();
+  renderizarTodo();
+
+  await Swal.fire({
+    title: "¡Acta N° " + numeroActa + " cerrada!",
+    imageUrl: "assets/img/acta-cerrada.svg",
+    imageWidth: 88,
+    imageHeight: 88,
+    imageAlt: "Acta cerrada",
+    html: plantillaDetalleActa(actaCerrada),
+    width: 640,
+    confirmButtonText: "Listo",
     confirmButtonColor: COLOR_PRIMARIO,
   });
-  if (!isConfirmed) return;
-
-  await cargarMaterias({ usarStorage: false });
 };
 
-const iniciarSesion = (event) => {
-  event.preventDefault();
+const verDetalleActa = (numero) => {
+  const acta = historialActas.find((item) => item.numero === numero);
+  if (!acta) return;
 
-  if (intentosRestantes <= 0) {
-    mostrarFeedback("Acceso bloqueado. Recargá la página para reintentar.", "error");
-    return;
-  }
-
-  if (cargandoDatos) {
-    mostrarFeedback("Esperá a que terminen de cargar las materias.", "info");
-    return;
-  }
-
-  const usuario = inputUsuario.value.trim();
-  const clave = inputContrasena.value;
-
-  if (!esTextoValido(usuario)) {
-    mostrarFeedback("El nombre del profesor debe ser un texto.", "error");
-    return;
-  }
-
-  if (usuario === profesor && clave === contraseña) {
-    seccionLogin.classList.add("oculto");
-    seccionApp.classList.remove("oculto");
-    nombreSesion.textContent = profesor;
-    renderizarMaterias();
-    programarRecordatorio();
-    mostrarFeedback("Acceso permitido. Bienvenido/a, " + profesor + ".", "ok");
-    return;
-  }
-
-  intentosRestantes -= 1;
-  actualizarIntentos();
-
-  const mensajeError =
-    intentosRestantes === 0
-      ? "Credenciales incorrectas. Sin intentos restantes."
-      : "Error de credenciales. Quedan " + intentosRestantes + " intentos.";
-
-  if (intentosRestantes === 0) botonIngresar.disabled = true;
-  mostrarFeedback(mensajeError, "error");
+  Swal.fire({
+    title: "Detalle del acta",
+    html: plantillaDetalleActa(acta),
+    width: 640,
+    confirmButtonText: "Cerrar",
+    confirmButtonColor: COLOR_PRIMARIO,
+  });
 };
 
-const cerrarSesion = () => {
-  if (temporizadorRecordatorio) clearTimeout(temporizadorRecordatorio);
-  temporizadorRecordatorio = null;
-  ocultarRecordatorio();
-  seccionApp.classList.add("oculto");
-  seccionLogin.classList.remove("oculto");
-  formLogin.reset();
+const reabrirMateriasDeActas = (numerosDeActa) => {
+  materias
+    .filter(({ numeroActa }) => numerosDeActa.includes(numeroActa))
+    .forEach((materia) => {
+      materia.numeroActa = null;
+    });
+};
+
+const anularActa = async (numero) => {
+  const confirmado = await confirmarAccion({
+    titulo: "¿Anular el acta N° " + numero + "?",
+    contenidoHTML: "Se borrará del historial y sus materias volverán a quedar abiertas para editar.",
+    textoBoton: "Sí, anular",
+    esPeligrosa: true,
+  });
+  if (!confirmado) return;
+
+  reabrirMateriasDeActas([numero]);
+  historialActas = historialActas.filter((acta) => acta.numero !== numero);
+  guardarEstado();
+  renderizarTodo();
+  mostrarFeedback("Se anuló el acta N° " + numero + ".", "warn");
+};
+
+const vaciarHistorial = async () => {
+  const confirmado = await confirmarAccion({
+    titulo: "¿Vaciar el historial?",
+    contenidoHTML: "Se anularán todas las actas cerradas y sus materias volverán a quedar abiertas.",
+    textoBoton: "Sí, vaciar",
+    esPeligrosa: true,
+  });
+  if (!confirmado) return;
+
+  reabrirMateriasDeActas(historialActas.map(({ numero }) => numero));
+  historialActas = [];
+  guardarEstado();
+  renderizarTodo();
+  mostrarFeedback("Se vació el historial de actas.", "warn");
+};
+
+const reiniciarSimulador = async () => {
+  const confirmado = await confirmarAccion({
+    titulo: "¿Reiniciar el simulador?",
+    contenidoHTML:
+      "Se borrarán todos los datos guardados en el navegador (notas, acta en curso e historial) y se volverán a cargar las materias del servidor.",
+    textoBoton: "Sí, reiniciar",
+    esPeligrosa: true,
+  });
+  if (!confirmado) return;
+
+  vaciarStorage();
   inputBusqueda.value = "";
-  mostrarFeedback("Sesión cerrada.", "info");
+  selectCategoria.value = "todas";
+  await cargarMaterias();
 };
 
-formLogin.addEventListener("submit", iniciarSesion);
-btnCerrarSesion.addEventListener("click", cerrarSesion);
-formMateria.addEventListener("submit", agregarMateriaDesdeFormulario);
-btnVaciarMaterias.addEventListener("click", vaciarMaterias);
-btnRestaurarServidor.addEventListener("click", restaurarDesdeServidor);
+formMateria.addEventListener("submit", agregarMateria);
+inputBusqueda.addEventListener("input", renderizarMateriasFiltradas);
+selectCategoria.addEventListener("change", renderizarMateriasFiltradas);
+btnReiniciar.addEventListener("click", reiniciarSimulador);
+btnVaciarActa.addEventListener("click", vaciarActa);
+btnConfirmarActa.addEventListener("click", confirmarCierreDeActa);
+btnVaciarHistorial.addEventListener("click", vaciarHistorial);
 btnCerrarAviso.addEventListener("click", ocultarRecordatorio);
 
-inputBusqueda.addEventListener("keyup", renderizarMaterias);
-
-btnPromedioGeneral.addEventListener("click", () => {
-  const general = promedioGeneralCurso(materias);
-  general === null
-    ? mostrarFeedback("No hay materias con notas cargadas.", "warn")
-    : mostrarFeedback("Promedio general del curso: " + general.toFixed(2), "ok");
-});
-
-contenedorItems.addEventListener("click", (event) => {
+contenedorMaterias.addEventListener("click", (event) => {
   const boton = event.target.closest("button[data-accion]");
   if (!boton) return;
 
-  const tarjeta = boton.closest(".item-materia");
-  const id = Number(tarjeta?.dataset?.id);
   const { accion } = boton.dataset;
+  if (accion === "cargar-materias") cargarMaterias({ priorizarStorage: false });
+  if (accion === "crear-materia") enfocarFormularioMateria();
 
+  const tarjeta = boton.closest(".item-materia");
+  if (!tarjeta) return;
+
+  const id = Number(tarjeta.dataset.id);
+  if (accion === "acta") alternarMateriaEnActa(id);
   if (accion === "eliminar") eliminarMateria(id);
-  if (accion === "lograr") marcarLograda(id);
 });
 
-contenedorItems.addEventListener("submit", (event) => {
-  const form = event.target.closest("form[data-accion='notas']");
-  if (!form) return;
+contenedorMaterias.addEventListener("submit", (event) => {
+  const formulario = event.target.closest("form[data-accion='notas']");
+  if (!formulario) return;
 
   event.preventDefault();
-  const botonGuardar = form.querySelector("button[type='submit']");
-  botonGuardar.disabled = true;
+  const id = Number(formulario.closest(".item-materia").dataset.id);
+  const { nota1, nota2 } = Object.fromEntries(new FormData(formulario));
 
   try {
-    const tarjeta = form.closest(".item-materia");
-    const id = Number(tarjeta?.dataset?.id);
-    const datos = new FormData(form);
-    guardarNotas(id, datos.get("nota1"), datos.get("nota2"));
+    guardarNotas(id, nota1, nota2);
   } catch (error) {
-    console.error("Error al guardar notas:", error);
-    mostrarFeedback("⚠️ No se pudo procesar la operación: " + error.message + " Intentá de nuevo.", "error");
+    mostrarFeedback("⚠️ " + error.message, "error");
   } finally {
-    // Se ejecuta siempre: re-sincroniza el DOM con el estado (descarta valores inválidos en los inputs)
-    botonGuardar.disabled = false;
-    renderizarMaterias();
+    // Re-sincroniza el DOM con el estado: descarta valores inválidos que hayan quedado en los inputs
+    renderizarTodo();
   }
 });
 
-actualizarIntentos();
+contenedorActa.addEventListener("click", (event) => {
+  const boton = event.target.closest("button[data-accion='quitar']");
+  if (!boton) return;
+  alternarMateriaEnActa(Number(boton.closest(".fila-acta").dataset.id));
+});
+
+contenedorHistorial.addEventListener("click", (event) => {
+  const boton = event.target.closest("button[data-accion]");
+  if (!boton) return;
+
+  const numero = Number(boton.closest(".fila-historial").dataset.numero);
+  const { accion } = boton.dataset;
+
+  if (accion === "detalle") verDetalleActa(numero);
+  if (accion === "anular") anularActa(numero);
+});
+
 cargarMaterias();

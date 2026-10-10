@@ -1,9 +1,11 @@
 [
-  { "id": 1, "nombre": "fisica", "categoria": "ciencias", "profesorAsignado": "Agustin", "nota1": 8, "nota2": 9, "lograda": false },
-  { "id": 2, "nombre": "matematica", "categoria": "ciencias", "profesorAsignado": "Agustin", "nota1": 7, "nota2": 6, "lograda": false },
-  { "id": 3, "nombre": "quimica", "categoria": "ciencias", "profesorAsignado": "Agustin", "nota1": 10, "nota2": 9, "lograda": false },
-  { "id": 4, "nombre": "historia", "categoria": "humanidades", "profesorAsignado": "Agustin", "nota1": null, "nota2": null, "lograda": false },
-  { "id": 5, "nombre": "ingles", "categoria": "idiomas", "profesorAsignado": "Agustin", "nota1": null, "nota2": null, "lograda": false },
-  { "id": 6, "nombre": "biologia", "categoria": "ciencias", "profesorAsignado": "Agustin", "nota1": 6, "nota2": 8, "lograda": false },
-  { "id": 7, "nombre": "literatura", "categoria": "humanidades", "profesorAsignado": "Agustin", "nota1": 9, "nota2": 7, "lograda": false }
+  { "id": 1, "nombre": "Física", "categoria": "Ciencias", "profesorAsignado": "Agustin", "nota1": 8, "nota2": 9, "numeroActa": null },
+  { "id": 2, "nombre": "Matemática", "categoria": "Ciencias", "profesorAsignado": "Agustin", "nota1": 7, "nota2": 6, "numeroActa": null },
+  { "id": 3, "nombre": "Química", "categoria": "Ciencias", "profesorAsignado": "Agustin", "nota1": 10, "nota2": 9, "numeroActa": null },
+  { "id": 4, "nombre": "Biología", "categoria": "Ciencias", "profesorAsignado": "Agustin", "nota1": 6, "nota2": 8, "numeroActa": null },
+  { "id": 5, "nombre": "Historia", "categoria": "Humanidades", "profesorAsignado": "Agustin", "nota1": null, "nota2": null, "numeroActa": null },
+  { "id": 6, "nombre": "Literatura", "categoria": "Humanidades", "profesorAsignado": "Agustin", "nota1": 9, "nota2": 7, "numeroActa": null },
+  { "id": 7, "nombre": "Filosofía", "categoria": "Humanidades", "profesorAsignado": "Agustin", "nota1": 4, "nota2": 5, "numeroActa": null },
+  { "id": 8, "nombre": "Inglés", "categoria": "Idiomas", "profesorAsignado": "Agustin", "nota1": null, "nota2": null, "numeroActa": null },
+  { "id": 9, "nombre": "Portugués", "categoria": "Idiomas", "profesorAsignado": "Agustin", "nota1": 8, "nota2": 8, "numeroActa": null }
 ]

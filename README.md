@@ -1,34 +1,45 @@
-# Simulador de Materias — Pre-Entrega 10: APIs, Peticiones y Librerías
+# Cierre de Actas — Proyecto Final JavaScript (Coderhouse)
 
-Simulador para que un profesor gestione sus materias (notas, promedios, estado) con datos obtenidos mediante `fetch` desde un JSON local.
+Simulador docente que completa el circuito de **cierre de cursada**: el profesor revisa sus materias, carga o modifica las notas, arma el acta con las materias a cerrar, ve el resumen calculado (aprobadas, desaprobadas y promedio general) y confirma el cierre. Las actas cerradas quedan en un historial donde se pueden consultar o anular.
 
-## Cómo ejecutarlo
+## Demo
 
-`fetch` no funciona abriendo el HTML con doble clic (`file://`). Usá un servidor local, por ejemplo la extensión **Live Server** o:
+https://laragustin.github.io/modulo-1---javascript-flex/
+
+## Cómo ejecutarlo localmente
+
+Abrir `index.html` con la extensión **Live Server** de VS Code, o desde la carpeta del proyecto:
 
 ```bash
 npx http-server .
 ```
 
-Credenciales: usuario `Agustin`, contraseña `1234`.
+## Circuito del simulador
 
-## Fuente de datos
+1. **Ver materias**: se cargan con `fetch` desde `data/materias.json` (o desde `localStorage` si hay progreso guardado). Se pueden buscar por nombre y filtrar por categoría.
+2. **Cargar / modificar notas**: cada materia abierta tiene un formulario para sus dos notas; el promedio y el estado se recalculan al guardar.
+3. **Armar el acta**: con "Agregar al acta" se suman materias al acta en curso (se pueden quitar o vaciar el acta completa).
+4. **Calcular**: el panel del acta muestra en vivo la cantidad de materias, aprobadas, desaprobadas, pendientes y el promedio general.
+5. **Confirmar cierre**: valida que todas las materias tengan notas, pide confirmación y genera el acta numerada. Las materias quedan cerradas (no editables).
+6. **Historial**: cada acta cerrada se puede ver en detalle o anular (sus materias vuelven a quedar abiertas). También se puede vaciar el historial completo.
 
-`data/materias.json` simula la base de datos del servidor. Cada materia tiene `id`, `nombre`, `categoria`, `profesorAsignado`, `nota1`, `nota2` y `lograda`.
+## Estructura
 
-## Flujo de datos
+```
+index.html
+assets/img/     logo, favicon e ilustraciones (SVG)
+css/style.css   estilos propios
+data/materias.json   base de datos simulada
+js/datos.js     modelo (clase Materia), fetch del JSON y helpers de localStorage
+js/interfaz.js  referencias al DOM, renderizado, Toastify y SweetAlert2
+js/main.js      estado del simulador, circuito de cierre de actas y eventos
+```
 
-1. Al cargar la página se ejecuta `cargarMaterias()` (`async`).
-2. Mientras se resuelve la petición se muestra un spinner ("Cargando materias…") y el botón de ingreso queda deshabilitado.
-3. `obtenerMateriasDesdeJSON()` hace `await fetch("./data/materias.json")`, valida `response.ok`, parsea con `await response.json()` y transforma cada objeto en una instancia de `Materia`.
-4. Si hay progreso guardado en `localStorage`, tiene prioridad sobre los datos del servidor; si no, se usan los del JSON y se persisten.
-5. `try / catch / finally`:
-   - **try**: éxito → toast de Toastify "Materias cargadas con éxito".
-   - **catch**: falla de red, respuesta no exitosa (404/500) o JSON inválido → modal de SweetAlert2 con el detalle del error y botón **Reintentar**. Si había datos en `localStorage`, se muestran como respaldo.
-   - **finally**: siempre se oculta el estado de carga, se reactivan los botones y se vuelve a renderizar el DOM.
-6. El botón **Restaurar del servidor** vuelve a pedir el JSON y reemplaza el listado actual (con confirmación).
+## Requisitos de la consigna
 
-## Librerías (vía CDN)
-
-- **Toastify JS**: notificaciones de éxito, advertencia y error en cada acción (login, agregar, eliminar, guardar notas, etc.).
-- **SweetAlert2**: confirmaciones (vaciar listado, restaurar datos) y errores de carga, reemplazando `window.confirm`.
+- **DOM y eventos**: toda la interacción es por la interfaz (formularios, botones, búsqueda, filtro). No se usa `prompt`, `alert` ni `confirm`.
+- **JSON + fetch**: el listado de materias vive en `data/materias.json` y se consume con `fetch` usando `async/await`, `try/catch/finally`, validación de `response.ok` y botón **Reintentar** ante errores.
+- **Funciones de orden superior**: `map`, `filter`, `reduce`, `find`, `some` y `forEach` (búsqueda, filtros, promedios, resumen del acta, numeración).
+- **Storage**: `localStorage` guarda las materias, el acta en curso y el historial; se modifica al cargar notas o cambiar el acta, se borra al eliminar materias o anular actas, y se vacía con **Reiniciar simulador**.
+- **Operadores avanzados**: ternarios, `||`, `??`, spread y destructuring (en parámetros y objetos).
+- **Librerías**: [Toastify JS](https://github.com/apvarun/toastify-js) para notificaciones y [SweetAlert2](https://sweetalert2.github.io/) para confirmaciones, errores y el comprobante del acta.
