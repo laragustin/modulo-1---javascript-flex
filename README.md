@@ -2,9 +2,6 @@
 
 Simulador docente que completa el circuito de **cierre de cursada**: el profesor revisa sus materias, carga o modifica las notas, arma el acta con las materias a cerrar, ve el resumen calculado (aprobadas, desaprobadas y promedio general) y confirma el cierre. Las actas cerradas quedan en un historial donde se pueden consultar o anular.
 
-## Demo
-
-https://laragustin.github.io/modulo-1---javascript-flex/
 
 ## Cómo ejecutarlo localmente
 
@@ -25,7 +22,6 @@ npx http-server .
 
 ## Estructura
 
-```
 index.html
 assets/img/     logo, favicon e ilustraciones (SVG)
 css/style.css   estilos propios
@@ -33,13 +29,6 @@ data/materias.json   base de datos simulada
 js/datos.js     modelo (clase Materia), fetch del JSON y helpers de localStorage
 js/interfaz.js  referencias al DOM, renderizado, Toastify y SweetAlert2
 js/main.js      estado del simulador, circuito de cierre de actas y eventos
-```
 
-## Requisitos de la consigna
 
-- **DOM y eventos**: toda la interacción es por la interfaz (formularios, botones, búsqueda, filtro). No se usa `prompt`, `alert` ni `confirm`.
-- **JSON + fetch**: el listado de materias vive en `data/materias.json` y se consume con `fetch` usando `async/await`, `try/catch/finally`, validación de `response.ok` y botón **Reintentar** ante errores.
-- **Funciones de orden superior**: `map`, `filter`, `reduce`, `find`, `some` y `forEach` (búsqueda, filtros, promedios, resumen del acta, numeración).
-- **Storage**: `localStorage` guarda las materias, el acta en curso y el historial; se modifica al cargar notas o cambiar el acta, se borra al eliminar materias o anular actas, y se vacía con **Reiniciar simulador**.
-- **Operadores avanzados**: ternarios, `||`, `??`, spread y destructuring (en parámetros y objetos).
-- **Librerías**: [Toastify JS](https://github.com/apvarun/toastify-js) para notificaciones y [SweetAlert2](https://sweetalert2.github.io/) para confirmaciones, errores y el comprobante del acta.
+ **Librerías usadas**: [Toastify JS](https://github.com/apvarun/toastify-js) para notificaciones y [SweetAlert2](https://sweetalert2.github.io/) para confirmaciones, errores y el comprobante del acta.
